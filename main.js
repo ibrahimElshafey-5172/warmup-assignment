@@ -10,6 +10,12 @@ function getShiftDuration(startTime, endTime) {
     // TODO: Implement this function
 }
 
+
+
+
+
+
+
 // ============================================================
 // Function 2: getIdleTime(startTime, endTime)
 // startTime: (typeof string) formatted as hh:mm:ss am or hh:mm:ss pm
