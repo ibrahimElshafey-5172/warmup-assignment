@@ -4,7 +4,7 @@ const fs = require("fs");
 
 
 function timeToSeconds(timeStr) {
-    timeStr = timeStr.trim();
+    timeStr = timeStr.trim().replace(/\r/g, ""); // strip Windows \r
     let isPM = false;
     let isAM = false;
     if (timeStr.toLowerCase().endsWith("pm")) {
@@ -43,9 +43,9 @@ function getShiftDuration(startTime, endTime) {
     let startSec = timeToSeconds(startTime);
     let endSec = timeToSeconds(endTime);
     let diff = endSec - startSec;
+    if (diff < 0) diff += 24 * 3600;
     return secondsToTime(diff);
-}
-
+} 
 // ============================================================
 // Function 2: getIdleTime(startTime, endTime)
 // startTime: (typeof string) formatted as hh:mm:ss am or hh:mm:ss pm
@@ -53,11 +53,15 @@ function getShiftDuration(startTime, endTime) {
 // Returns: string formatted as h:mm:ss
 // ============================================================
 function getIdleTime(startTime, endTime) {
-    const deliveryStart = 8 * 3600;
-    const deliveryEnd   = 22 * 3600;
+    const deliveryStart = 8 * 3600;   // 8:00 AM in seconds
+    const deliveryEnd   = 22 * 3600;  // 10:00 PM in seconds
+    const DAY           = 24 * 3600;
 
     let startSec = timeToSeconds(startTime);
     let endSec   = timeToSeconds(endTime);
+
+    // Handle overnight shifts
+    if (endSec < startSec) endSec += DAY;
 
     let idleBefore = 0;
     let idleAfter  = 0;
@@ -303,7 +307,35 @@ function getRequiredHoursPerMonth(textFile, rateFile, bonusCount, driverID, mont
 // Returns: integer (net pay)
 // ============================================================
 function getNetPay(driverID, actualHours, requiredHours, rateFile) {
-    // TODO: Implement this function
+     let rateContent = fs.readFileSync(rateFile, { encoding: "utf8" });
+    let rateLines = rateContent.split("\n").filter(l => l.trim() !== "");
+    let basePay = 0;
+    let tier = 0;
+    for (let line of rateLines) {
+        let cols = line.split(",");
+        if (cols[0].trim() === driverID) {
+            basePay = parseInt(cols[2].trim());
+            tier    = parseInt(cols[3].trim());
+            break;
+        }
+    }
+
+    const allowedMissingHours = { 1: 50, 2: 20, 3: 10, 4: 3 };
+    let allowed = allowedMissingHours[tier] || 0;
+
+    let actualSec   = timeToSeconds(actualHours);
+    let requiredSec = timeToSeconds(requiredHours);
+
+    if (actualSec >= requiredSec) return basePay;
+
+    let missingHours = (requiredSec - actualSec) / 3600;
+    let billable = missingHours - allowed;
+
+    if (billable <= 0) return basePay;
+
+    let deductionRatePerHour = Math.floor(basePay / 185);
+    let salaryDeduction = Math.floor(billable) * deductionRatePerHour;
+    return basePay - salaryDeduction;
 } 
 
 module.exports = {
