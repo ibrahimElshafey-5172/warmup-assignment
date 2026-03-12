@@ -1,4 +1,5 @@
 const fs = require("fs");
+ 
 
 
 
@@ -30,10 +31,7 @@ function secondsToTime(totalSeconds) {
     let mm = String(m).padStart(2, "0");
     let ss = String(s).padStart(2, "0");
     return `${h}:${mm}:${ss}`;
-}
-
-
-
+} 
 
 // ============================================================
 // Function 1: getShiftDuration(startTime, endTime)
@@ -42,14 +40,11 @@ function secondsToTime(totalSeconds) {
 // Returns: string formatted as h:mm:ss
 // ============================================================
 function getShiftDuration(startTime, endTime) {
-    // TODO: Implement this function
+    let startSec = timeToSeconds(startTime);
+    let endSec = timeToSeconds(endTime);
+    let diff = endSec - startSec;
+    return secondsToTime(diff);
 }
-
-
-
-
-
-
 
 // ============================================================
 // Function 2: getIdleTime(startTime, endTime)
@@ -58,7 +53,26 @@ function getShiftDuration(startTime, endTime) {
 // Returns: string formatted as h:mm:ss
 // ============================================================
 function getIdleTime(startTime, endTime) {
-    // TODO: Implement this function
+    const deliveryStart = 8 * 3600;
+    const deliveryEnd   = 22 * 3600;
+
+    let startSec = timeToSeconds(startTime);
+    let endSec   = timeToSeconds(endTime);
+
+    let idleBefore = 0;
+    let idleAfter  = 0;
+
+    if (startSec < deliveryStart) {
+        idleBefore = Math.min(deliveryStart, endSec) - startSec;
+        if (idleBefore < 0) idleBefore = 0;
+    }
+
+    if (endSec > deliveryEnd) {
+        idleAfter = endSec - Math.max(deliveryEnd, startSec);
+        if (idleAfter < 0) idleAfter = 0;
+    }
+
+    return secondsToTime(idleBefore + idleAfter);
 }
 
 // ============================================================
@@ -68,7 +82,9 @@ function getIdleTime(startTime, endTime) {
 // Returns: string formatted as h:mm:ss
 // ============================================================
 function getActiveTime(shiftDuration, idleTime) {
-    // TODO: Implement this function
+    let shiftSec = timeToSeconds(shiftDuration);
+    let idleSec  = timeToSeconds(idleTime);
+    return secondsToTime(shiftSec - idleSec);
 }
 
 // ============================================================
@@ -78,7 +94,19 @@ function getActiveTime(shiftDuration, idleTime) {
 // Returns: boolean
 // ============================================================
 function metQuota(date, activeTime) {
-    // TODO: Implement this function
+    const eidStart  = new Date("2025-04-10");
+    const eidEnd    = new Date("2025-04-30");
+    const checkDate = new Date(date);
+
+    let quotaSec;
+    if (checkDate >= eidStart && checkDate <= eidEnd) {
+        quotaSec = 6 * 3600;
+    } else {
+        quotaSec = 8 * 3600 + 24 * 60;
+    }
+
+    let activeSec = timeToSeconds(activeTime);
+    return activeSec >= quotaSec;
 }
 
 // ============================================================
@@ -88,7 +116,52 @@ function metQuota(date, activeTime) {
 // Returns: object with 10 properties or empty object {}
 // ============================================================
 function addShiftRecord(textFile, shiftObj) {
-    // TODO: Implement this function
+    let content = fs.readFileSync(textFile, { encoding: "utf8" });
+    let lines = content.split("\n").filter(l => l.trim() !== "");
+
+    for (let line of lines) {
+        let cols = line.split(",");
+        if (cols[0].trim() === shiftObj.driverID && cols[2].trim() === shiftObj.date) {
+            return {};
+        }
+    }
+
+    let shiftDuration = getShiftDuration(shiftObj.startTime, shiftObj.endTime);
+    let idleTime      = getIdleTime(shiftObj.startTime, shiftObj.endTime);
+    let activeTime    = getActiveTime(shiftDuration, idleTime);
+    let quota         = metQuota(shiftObj.date, activeTime);
+    let hasBonus      = false;
+
+    let newRecord = {
+        driverID:      shiftObj.driverID,
+        driverName:    shiftObj.driverName,
+        date:          shiftObj.date,
+        startTime:     shiftObj.startTime,
+        endTime:       shiftObj.endTime,
+        shiftDuration: shiftDuration,
+        idleTime:      idleTime,
+        activeTime:    activeTime,
+        metQuota:      quota,
+        hasBonus:      hasBonus
+    };
+
+    let newLine = `${newRecord.driverID},${newRecord.driverName},${newRecord.date},${newRecord.startTime},${newRecord.endTime},${newRecord.shiftDuration},${newRecord.idleTime},${newRecord.activeTime},${newRecord.metQuota},${newRecord.hasBonus}`;
+
+    let lastIndex = -1;
+    for (let i = 0; i < lines.length; i++) {
+        if (lines[i].split(",")[0].trim() === shiftObj.driverID) {
+            lastIndex = i;
+        }
+    }
+
+    if (lastIndex === -1) {
+        lines.push(newLine);
+    } else {
+        lines.splice(lastIndex + 1, 0, newLine);
+    }
+
+    fs.writeFileSync(textFile, lines.join("\n") + "\n", { encoding: "utf8" });
+    return newRecord;
 }
 
 // ============================================================
@@ -100,7 +173,20 @@ function addShiftRecord(textFile, shiftObj) {
 // Returns: nothing (void)
 // ============================================================
 function setBonus(textFile, driverID, date, newValue) {
-    // TODO: Implement this function
+    let content = fs.readFileSync(textFile, { encoding: "utf8" });
+    let lines = content.split("\n");
+
+    for (let i = 0; i < lines.length; i++) {
+        if (lines[i].trim() === "") continue;
+        let cols = lines[i].split(",");
+        if (cols[0].trim() === driverID && cols[2].trim() === date) {
+            cols[9] = newValue.toString();
+            lines[i] = cols.join(",");
+            break;
+        }
+    }
+
+    fs.writeFileSync(textFile, lines.join("\n"), { encoding: "utf8" });
 }
 
 // ============================================================
@@ -111,7 +197,27 @@ function setBonus(textFile, driverID, date, newValue) {
 // Returns: number (-1 if driverID not found)
 // ============================================================
 function countBonusPerMonth(textFile, driverID, month) {
-    // TODO: Implement this function
+    let content = fs.readFileSync(textFile, { encoding: "utf8" });
+    let lines = content.split("\n").filter(l => l.trim() !== "");
+
+    let normalizedMonth = parseInt(month);
+    let found = false;
+    let count = 0;
+
+    for (let line of lines) {
+        let cols = line.split(",");
+        if (cols[0].trim() === driverID) {
+            found = true;
+            let recordMonth = parseInt(cols[2].trim().split("-")[1]);
+            if (recordMonth === normalizedMonth) {
+                if (cols[9].trim() === "true") {
+                    count++;
+                }
+            }
+        }
+    }
+
+    return found ? count : -1;
 }
 
 // ============================================================
@@ -122,7 +228,20 @@ function countBonusPerMonth(textFile, driverID, month) {
 // Returns: string formatted as hhh:mm:ss
 // ============================================================
 function getTotalActiveHoursPerMonth(textFile, driverID, month) {
-    // TODO: Implement this function
+    let content = fs.readFileSync(textFile, { encoding: "utf8" });
+    let lines = content.split("\n").filter(l => l.trim() !== "");
+
+    let totalSeconds = 0;
+
+    for (let line of lines) {
+        let cols = line.split(",");
+        if (cols[0].trim() !== driverID) continue;
+        let recordMonth = parseInt(cols[2].trim().split("-")[1]);
+        if (recordMonth !== month) continue;
+        totalSeconds += timeToSeconds(cols[7].trim());
+    }
+
+    return secondsToTime(totalSeconds);
 }
 
 // ============================================================
@@ -135,7 +254,44 @@ function getTotalActiveHoursPerMonth(textFile, driverID, month) {
 // Returns: string formatted as hhh:mm:ss
 // ============================================================
 function getRequiredHoursPerMonth(textFile, rateFile, bonusCount, driverID, month) {
-    // TODO: Implement this function
+    let rateContent = fs.readFileSync(rateFile, { encoding: "utf8" });
+    let rateLines = rateContent.split("\n").filter(l => l.trim() !== "");
+    let dayOff = null;
+    for (let line of rateLines) {
+        let cols = line.split(",");
+        if (cols[0].trim() === driverID) {
+            dayOff = cols[1].trim();
+            break;
+        }
+    }
+
+    const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const eidStart = new Date("2025-04-10");
+    const eidEnd   = new Date("2025-04-30");
+
+    let shiftContent = fs.readFileSync(textFile, { encoding: "utf8" });
+    let shiftLines = shiftContent.split("\n").filter(l => l.trim() !== "");
+
+    let totalRequiredSeconds = 0;
+
+    for (let line of shiftLines) {
+        let cols = line.split(",");
+        if (cols[0].trim() !== driverID) continue;
+        let dateStr = cols[2].trim();
+        if (parseInt(dateStr.split("-")[1]) !== month) continue;
+
+        let recordDate = new Date(dateStr);
+        if (dayNames[recordDate.getDay()] === dayOff) continue;
+
+        if (recordDate >= eidStart && recordDate <= eidEnd) {
+            totalRequiredSeconds += 6 * 3600;
+        } else {
+            totalRequiredSeconds += 8 * 3600 + 24 * 60;
+        }
+    }
+
+    totalRequiredSeconds = Math.max(0, totalRequiredSeconds - bonusCount * 2 * 3600);
+    return secondsToTime(totalRequiredSeconds);
 }
 
 // ============================================================
@@ -148,7 +304,7 @@ function getRequiredHoursPerMonth(textFile, rateFile, bonusCount, driverID, mont
 // ============================================================
 function getNetPay(driverID, actualHours, requiredHours, rateFile) {
     // TODO: Implement this function
-}
+} 
 
 module.exports = {
     getShiftDuration,
@@ -161,4 +317,4 @@ module.exports = {
     getTotalActiveHoursPerMonth,
     getRequiredHoursPerMonth,
     getNetPay
-};
+}; 
